@@ -20,7 +20,7 @@ exports.onInstall = (config) !->
 
 		Event.create
 			unit: 'game'
-			text: "Chess: #{Plugin.userName()} wants to play"
+			text: "Singularity: #{Plugin.userName()} wants to play"
 			#text_you: "Chess: you challenged #{xx}"
 			for: x=[+config.white, +config.black]
 			new: [-Plugin.userId()]
@@ -52,9 +52,14 @@ accept = (userId) !->
 		Db.shared.remove 'challenge'
 		Event.create
 			unit: 'game'
-			text: "Chess game has begun!"
+			text: "Singularity game has begun!"
 			for: [Db.shared.get('white'), Db.shared.get('black')]
 		Chess.init()
+
+exports.client_init = !->
+	Db.shared.set 'white', 1
+	Db.shared.set 'black', 1
+	Chess.init()
 
 exports.client_move = (from, to, promotionPiece) !->
 	game = Db.shared.ref('game')
@@ -63,7 +68,7 @@ exports.client_move = (from, to, promotionPiece) !->
 
 		Event.create
 			unit: 'move'
-			text: "Chess: #{Plugin.userName()} moved #{m}"
+			text: "Singularity: #{Plugin.userName()} moved #{m}"
 			#text_you: "Chess: you moved #{m}"
 			for: [Db.shared.get('white'), Db.shared.get('black')]
 			new: [-Plugin.userId()]

@@ -21,13 +21,12 @@ exports.renderSettings = !->
 			name: 'opponent'
 			title: tr("Opponent")
 
+dbg.rules = ->
+	Chess.rules()
+
 exports.render = !->
 	whiteId = Db.shared.get('white')
 	blackId = Db.shared.get('black')
-	color = if Plugin.userId() is whiteId
-			'white'
-		else if Plugin.userId() is blackId
-			'black'
 
 	if challenge=Db.shared.get('challenge')
 		Dom.div !->
@@ -50,8 +49,10 @@ exports.render = !->
 				Dom.div tr("Waiting for %1 to accept...", Plugin.userName(id))
 
 	else
+		#Ui.bigButton "INIT", !->
+		#	Server.call 'init'
 
-		isBlack = Db.shared.get('black') is Plugin.userId() and Db.shared.get('white') isnt Plugin.userId()
+		isBlack = Plugin.userId() is blackId and Plugin.userId() isnt whiteId
 
 		renderSide = (side) !->
 			Dom.div !->
@@ -90,6 +91,10 @@ exports.render = !->
 				_boxPack: 'center'
 				margin: '4px 0'
 
+		Dom.div !->
+			Dom.style
+				margin: '0 5%'
+
 			selected = Obs.create false
 			markers = Obs.create {}
 				# chess field index indicating last-moved-piece, king-under-attack, selected, possible-move
@@ -111,16 +116,69 @@ exports.render = !->
 					markers.set {}
 
 			Dom.div !->
-				size = 0|Math.max(200, Math.min(Dom.viewport.get('width')-16, 480)) / 8
-				Dom.cls 'board'
 				Dom.style
-					width: "#{size*8}px"
-		
-				(if isBlack then '12345678' else '87654321').split('').forEach (y,yi) !->
-					Dom.div !->
-						(if isBlack then 'hgfedcba' else 'abcdefgh').split('').forEach (x,xi) !->
-							Dom.div !->
-								Dom.cls 'square'
+					paddingTop: '161%'
+					#background: "url(#{Plugin.resourceUri 'board.svg'})"
+					background: 'url("data:image/svg+xml;utf8,<svg width=\'1080\' height=\'1740\' viewPort=\'0 0 1060 1720\' version=\'1.1\' xmlns=\'http://www.w3.org/2000/svg\'><clipPath id=\'aceg\'><rect x=\'135\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'405\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'675\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'945\' y=\'0\' width=\'135\' height=\'1740\'/></clipPath><clipPath id=\'bdfh\'><rect x=\'0\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'270\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'540\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'810\' y=\'0\' width=\'135\' height=\'1740\'/><rect x=\'1080\' y=\'0\' width=\'135\' height=\'1740\'/></clipPath><ellipse cx=\'540\' cy=\'870\' rx=\'810\' ry=\'870\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'810\' ry=\'870\' fill=\'#fff\' clip-path=\'url(#aceg)\' /><ellipse cx=\'540\' cy=\'870\' rx=\'675\' ry=\'725\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'675\' ry=\'725\' fill=\'#FFF\' clip-path=\'url(#bdfh)\' /><ellipse cx=\'540\' cy=\'870\' rx=\'540\' ry=\'580\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'540\' ry=\'580\' fill=\'#FFF\' clip-path=\'url(#aceg)\' /><ellipse cx=\'540\' cy=\'870\' rx=\'405\' ry=\'435\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'405\' ry=\'435\' fill=\'#FFF\' clip-path=\'url(#bdfh)\' /><ellipse cx=\'540\' cy=\'870\' rx=\'270\' ry=\'290\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'270\' ry=\'290\' fill=\'#FFF\' clip-path=\'url(#aceg)\' /><ellipse cx=\'540\' cy=\'870\' rx=\'135\' ry=\'145\' fill=\'#000\' /><ellipse cx=\'540\' cy=\'870\' rx=\'135\' ry=\'145\' fill=\'#FFF\' clip-path=\'url(#bdfh)\' /></svg>")'
+					backgroundSize: '100% 100%'
+					position: 'relative'
+
+				size = 50
+
+				(if isBlack then 'hgfedcba' else 'abcdefgh').split('').forEach (x,xi) !->
+					rows = if x in ['a','h']
+							[1,2,45,7,8]
+						else if x in ['b','g']
+							[1,2,3,45,6,7,8]
+						else if x in ['c','f']
+							[1,2,3,4,45,5,6,7,8]
+						else if x in ['d','e']
+							[1,2,3,4,42,45,48,5,6,7,8]
+					rows.forEach (y, yi) !->
+						Dom.div !->
+							offset = 0
+							stride = 8.3
+							height = 8
+							if x in ['a','h']
+								offset = 10
+								stride = 12
+								if y is 45
+									height = 30
+							else if x in ['b','g']
+								offset = 5
+								stride = 10
+								if y is 45
+									height = 25
+							else if x in ['c','f']
+								offset = 2
+								stride = 8.7
+								if y is 45
+									height = 20
+							else if y is 45
+								height = 15
+
+							top = if y is 45
+									50
+								else if y is 42
+									38
+								else if y is 48
+									62
+								else if y > 4
+									96 - (8-y)*stride - offset
+								else
+									4 + (y-1)*stride + offset
+
+							if !isBlack
+								top = 100-top
+							top -= height/2
+							#Dom.cls 'square'
+							Dom.style
+								position: 'absolute'
+								left: "#{xi*12.5}%"
+								width: '12.5%'
+								top: "#{top}%"
+								height: "#{height}%"
+							if 1
 								Dom.cls if (xi%2)==(yi%2) then 'white' else 'black'
 
 								piece = Db.shared.get('board', x+y)
@@ -154,7 +212,7 @@ exports.render = !->
 
 								Dom.onTap !->
 									turn = Db.shared.get('turn')
-									if turn is color
+									if Db.shared.get(turn) is Plugin.userId()
 										s = selected.get()
 										if !s and piece and piece[0] is turn[0]
 											selected.set x+y
@@ -258,7 +316,7 @@ selectMember = (opts) !->
 
 Dom.css
 	'.board':
-		boxShadow: '0 0 8px #000'
+		XboxShadow: '0 0 8px #000'
 	'.square':
 		display: 'inline-block'
 		width: '12.5%'

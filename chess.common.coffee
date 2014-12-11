@@ -122,22 +122,23 @@ findMoves = (board, base) ->
 	[color,piece] = square
 
 	moves = {}
-	findMove = (deltaX, deltaY, ifEmpty, special) ->
-		loc = locDelta(base, deltaX, deltaY)
-		if !loc or (board[loc]?[0] is color)
-			# invalid location, or own piece
-			false
-		else
-			# ifEmpty == true: only add if square is empty
-			# ifEmpty == false: only add if square contains opponent piece
-			# ifEmpty == undefined: add if square is empty or contains opponent piece
-			# ifEmpty == null: never add
-			if ifEmpty isnt null and (!ifEmpty? or (ifEmpty == !board[loc]))
-				moves[loc] = special||true # add to possible moves
 
-			!board[loc] # whether to continue search
+	#log 'findMoves', base
+
+	explore = (direction,recurse,ifEmpty,special,square,prev) ->
+		square ?= base
+		#log 'exploring', square, direction
+		[a,b] = exploreRules[square][direction]
+		for [loc,other] in [[a,b],[b,a]]
+			if loc and (!prev or prev is other) and board[loc]?[0] isnt color
+				if ifEmpty isnt null and (!ifEmpty? or (ifEmpty == !board[loc]))
+					moves[loc] = special||true # add to possible moves
+				if !board[loc] and recurse
+					for d in [0,1,2,3]
+						explore d, true, ifEmpty, special, loc, square
 
 	if piece is 'p'
+		###
 		y = if color is 'w' then 1 else -1
 		isPromotion = +base[1] is (if color is 'w' then 7 else 2)
 		if findMove(0, y, true, (if isPromotion then 'promotion'))
@@ -147,14 +148,43 @@ findMoves = (board, base) ->
 		for x in [-1,1]
 			enPassant = last and (last[1] is locDelta(base,x,0)) and board[last[1]][1] is 'p'
 			findMove(x, y, (if enPassant then undefined else false), (if isPromotion then 'promotion' else if enPassant then 'enPassant'))
+		###
+		explore 1, false, true
+		explore 2, false, false
+		explore 3, false, false
+
+		# discard all moves backward
+		y = (s) ->
+			p = +s.substr(1)
+			p *= 10 if p<10
+			p
+		for s of moves
+			#log 'color', color, y(s), y(base)
+			if (color is 'w' and y(s) <= y(base)) or (color is 'b' and y(s) >= y(base))
+				#log 'discard!'
+				delete moves[s]
 
 	else if piece is 'n'
-		explore = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
-		explore.single = true
+		oldBoard = board
+		board = {}
+		explore 0
+		explore 1
+		board = oldBoard
+
+		stage1 = {}
+		stage1[s] = true for s of moves
+		moves = {}
+		for s of stage1
+			explore 2, undefined, undefined, undefined, s
+			explore 3, undefined, undefined, undefined, s
+
+		for s of stage1
+			delete moves[s]
 
 	else if piece in ['k','q']
-		explore = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,-1],[-1,1]]
+		explore d, (piece is 'q') for d in [0,1,2,3]
 
+		###
 		if piece is 'k'
 			explore.single = true
 			# check castling
@@ -162,24 +192,72 @@ findMoves = (board, base) ->
 				if Db.shared?.peek('castling', color+side) and findMove(x,0,null)
 					# todo: check for check
 					findMove(x+x, 0, true, 'castle')
+		###
 
 	else if piece is 'r'
-		explore = [[1,0],[0,1],[-1,0],[0,-1]]
+		explore 0, true
+		explore 1, true
 
 	else if piece is 'b'
-		explore = [[1,1],[1,-1],[-1,1],[-1,-1]]
-
-	for [dx,dy] in explore||[]
-		x = y = 0
-		loop
-			x += dx
-			y += dy
-			break if !findMove(x,y) or explore.single
+		explore 2, true
+		explore 3, true
 	
 	moves
-	
-locDelta = (base, deltaX, deltaY) ->
-	to = String.fromCharCode(base.charCodeAt(0) + deltaX) + (parseInt(base[1]) + deltaY)
-	if to.length == 2 and ('a'.charCodeAt(0) <= to.charCodeAt(0) <= 'h'.charCodeAt(0)) and (1 <= parseInt(to.charAt(1)) <= 8)
-		to
+
+exports.rules = -> exploreRules
+
+exploreRules = {} # square -> [[hSquare0,hSquare1],[vSquare0,vSquare1],[d1Square0,d1Square1],[d2Square0,d2Square1]]
+if dbg?
+	dbg.e = exploreRules
+
+squareDelta = (square, deltaRow, deltaCol) ->
+	return if !square?
+
+	col = square.charCodeAt(0) - 'a'.charCodeAt(0) + 1
+	col = if typeof deltaCol is 'function' then deltaCol(col) else col + deltaCol
+	col = String.fromCharCode(col + 'a'.charCodeAt(0) - 1)
+	return if col<'a' or col>'h'
+
+	row = parseInt(square[1..])
+	row = if typeof deltaRow is 'function' then deltaRow(row) else row + deltaRow
+	return if row<1 or (if row>10 then row/10 else row)>8
+
+	col+row
+
+rule = (square, horizontal, vertical, diagonal1, diagonal2) !->
+	horizontal ?= [squareDelta(square,0,-1),squareDelta(square,0,1)]
+	vertical ?= [squareDelta(square,-1,0),squareDelta(square,1,0)]
+	diagonal1 ?= [squareDelta(square,-1,1),squareDelta(square,1,-1)]
+	diagonal2 ?= [squareDelta(square,-1,-1),squareDelta(square,1,1)]
+
+	mirrorCol = (col) -> 9-col
+	mirrorRow = (row) -> (if row>10 then 90 else 9)-row
+
+	[
+		(s) -> s
+		(s) -> squareDelta(s, 0, mirrorCol)
+		(s) -> squareDelta(s, mirrorRow, 0)
+		(s) -> squareDelta(s, mirrorRow, mirrorCol)
+	].forEach (transform) !->
+		exploreRules[transform(square)] = [
+			horizontal?.map(transform),
+			vertical?.map(transform),
+			diagonal1?.map(transform),
+			diagonal2?.map(transform)
+		]
+
+rule s for s in ['a1','b1','c1','d1','c2','d2','d3']
+rule 'a2', undefined, ['a45','a1'], ['a7','b1']
+rule 'b2', undefined, undefined, ['a45','c1']
+rule 'b3', ['a45','c3'], ['b2','b45'], ['c2','b6']
+rule 'c3', undefined, undefined, ['b45','d2']
+rule 'c4', ['b45','d4'], ['c3','c45'], ['c5','d3'], ['b3','d42']
+rule 'd4', undefined, ['d3','d42'], ['c45','e3'], ['c3','e42']
+rule 'd42', ['c45','e42'], ['d4','d45'], ['d48','e4'], ['c4','e45']
+
+rule 'a45', ['a2','b6'], ['a7','b3'], ['b2','b7'], ['b45']
+rule 'b45', ['b3','c5'], ['b6','c4'], ['c3','c6'], ['a45','c45']
+rule 'c45', ['c4','d48'], ['c5','d42'], ['d4','d5'], ['b45','d45']
+rule 'd45', ['d42','d48'], [], ['e42','e48'], ['c45','e45']
+
 
